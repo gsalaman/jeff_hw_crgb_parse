@@ -43,6 +43,139 @@ parse_state_type parse_state = LOOK_FOR_COMMAND;
 char myBuffer[BUFF_SIZE];
 int buffer_index=0;
 
+void begin_crgb_build( void )
+{
+       int i;
+       
+       // This is (potentially) the start of a CRGB string.  Store that 'C' at the 
+       // beginning of our buffer.
+       myBuffer[0] = 'C';
+
+       // erase all other characters (to prevent old CRGBS from being "insta-detected"
+       for (i = 1; i < BUFF_SIZE; i++)
+       {
+         myBuffer[i] = ' ';
+       }
+
+       // get ready to collect the other characters.
+       buffer_index = 1;
+       
+       Serial.println("** Found a C.  Starting to build");  
+}
+
+void begin_string_processing( void )
+{
+  Serial.println("String Command found:");
+}
+
+parse_state_type look_for_command( char c )
+{
+  
+   if (c == 'C')
+   {
+       begin_crgb_build();
+       
+       return BUILD_CRGB;
+     }
+     else if (c == 'S')
+     {
+       // This is the start of a string.
+       begin_string_processing();
+       
+       return PROCESS_STRING;
+     }
+     else
+     {
+       // not a valid command.  Keep looking.
+       return LOOK_FOR_COMMAND;
+     }
+     
+}  // end of look_for_command
+
+parse_state_type process_string( char c )
+{
+   // enters and nulls terminate the string...we'll go back to looking for a command.
+   if ( (c == '\n') || (c == NULL) )
+   {
+      // Since we're done with the string, lets print a line feed to make our output a little cleaner.
+      Serial.println();
+
+      // ...and we're back to looking for a command.
+      return LOOK_FOR_COMMAND;
+    }
+    else
+    {
+      // just print the character.
+      Serial.print(c);
+
+      // ...and we're continuing to process the string.
+      return PROCESS_STRING; 
+    }
+}     
+
+parse_state_type build_crgb( char c )
+{
+   CRGB light_value;
+
+    // If we're in the act of building a CRGB and we see either a C or an S, it's a new command.
+
+    if (c == 'C')
+    {
+      // if we see a 'C', we need to start a new CRGB.
+      begin_crgb_build();
+
+      return BUILD_CRGB;
+    }
+    
+    if (c == 'S')
+    {
+      // if we see an 'S', we need to start processing the string.
+      begin_string_processing();
+
+      return PROCESS_STRING;  
+    }
+    
+    
+    Serial.print("** Building CRGB, index ");
+    Serial.print(buffer_index);
+    Serial.print(" , char=");
+    Serial.println(c);
+
+    
+    myBuffer[buffer_index] = c;
+
+    // try what we've got so far...
+    light_value = convertCRGBString(myBuffer);
+
+    if (light_value)
+    {
+       Serial.println("FOUND VALID CRGB!!!");
+
+       //go back to looking for a Command...
+       buffer_index = 0;
+       return LOOK_FOR_COMMAND;
+    }
+    else
+    {
+       // no valid CRGB (at least yet).  Did we run out of characters?
+       buffer_index++;
+       if (buffer_index >= BUFF_SIZE)
+       {
+           // We've seen too many characters.  This can't be a CRGB.
+           buffer_index = 0;
+
+           Serial.println("** Too many chars.  back to looking for command");
+           return LOOK_FOR_COMMAND;
+        }
+        else
+        {
+          // Still got more characters to parse.  Keep building the CRGB.
+          return BUILD_CRGB;
+        }
+         
+     }  // end build CRGB 
+
+}
 
 void setup( ) 
 { 
@@ -55,85 +188,45 @@ void setup( )
 void loop ( ) 
 { 
    char c;
-   CRGB light_value;
+   parse_state_type next_state;
 
    while (Serial.available())
    {
      c = Serial.read();
 
-     if (parse_state == PROCESS_STRING)
+     switch (parse_state)
      {
-       // enters and nulls terminate the string...we'll go back to looking for a command.
-       if ( (c == '\n') || (c == NULL) )
-       {
-         Serial.println();
-         parse_state = LOOK_FOR_COMMAND;
-       }
-       else
-       {
-         // just print the character.
-         Serial.print(c);
-       }
-     }  // end building string
-     
-     else if (c == 'C')
-     {
-       // This is (potentially) the start of a CRGB string.  Store that 'C' at the 
-       // beginning of our buffer.
-       myBuffer[0] = c;
+       case LOOK_FOR_COMMAND:
+         next_state = look_for_command(c);
+       break;
 
-       // get ready to collect the other characters.
-       buffer_index = 1;
-       parse_state = BUILD_CRGB;
+       case PROCESS_STRING:
+         next_state = process_string(c);
+       break;
 
-       Serial.println("** Found a C.  Starting to build");
-       
-     }
-     else if (c == 'S')
-     {
-       Serial.println("BEGIN STRING: ");
-       
-       // This is the start of a string.
-       parse_state = PROCESS_STRING;
-     }
-     else if (parse_state == BUILD_CRGB)
-     {
-       Serial.print("** Building CRGB, index ");
-       Serial.print(buffer_index);
-       Serial.print(" , char=");
-       Serial.println(c);
-       
-       myBuffer[buffer_index] = c;
+       case BUILD_CRGB:
+         next_state = build_crgb(c);
+       break;
 
-       // try what we've got so far...
-       light_value = convertCRGBString(myBuffer);
+       default:
+         Serial.print("UNKNOWN STATE: ");
+         Serial.println(parse_state);
+     }  // end of switch on parse state
 
-       if (light_value)
-       {
-         Serial.println("FOUND VALID CRGB!!!");
+     #ifdef DEBUG_STATE_MACHINE
+     Serial.print("Current State:  ");
+     Serial.print(parse_state);
+     Serial.print(", input: ");
+     Serial.print(c);
+     Serial.print(", Next State: ");
+     Serial.println(next_state);
+     #endif
 
-         //go back to looking for a Command...
-         parse_state = LOOK_FOR_COMMAND;
-         buffer_index = 0;
-       }
-       else
-       {
-         // no valid CRGB (at least yet).  Did we run out of characters?
-         buffer_index++;
-         if (buffer_index >= BUFF_SIZE)
-         {
-           // We've seen too many characters.  This can't be a CRGB.
-           parse_state = LOOK_FOR_COMMAND;
-           buffer_index = 0;
-
-           Serial.println("** Too many chars.  back to looking for C");
-         }
-         
-       }
-     }  // end build CRGB 
-     
+     parse_state = next_state;
+               
    }  // end serial available
-} 
+   
+} // end of loop
 
 CRGB convertCRGBString(char *input ) 
 { 
