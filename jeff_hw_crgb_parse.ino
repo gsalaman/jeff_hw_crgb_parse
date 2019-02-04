@@ -56,6 +56,7 @@ void loop ( )
 { 
    char c;
    CRGB light_value;
+   int i;
 
    while (Serial.available())
    {
@@ -82,6 +83,12 @@ void loop ( )
        // beginning of our buffer.
        myBuffer[0] = c;
 
+       // Blitz any other characters so that we don't get false-positives on subsequent calls.
+       for (i = 1; i < BUFF_SIZE; i++)
+       {
+         myBuffer[i] = ' ';
+       }
+       
        // get ready to collect the other characters.
        buffer_index = 1;
        parse_state = BUILD_CRGB;
