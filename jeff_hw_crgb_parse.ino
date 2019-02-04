@@ -30,20 +30,14 @@ CRGB convertCRGBString(char *input )
 #include "FastLED.h" 
 CRGB leds; 
 
-char input_1[]="C130,25,56"; 
-char input_2[] ="C255,255,255"; 
-char input_3[]="C1,0,1"; 
-char input_4[] ="G1,1,1"; 
-char input_5[] ="C10,20,30Hello"; 
-char input_6[] ="pizzaC0,99,256donkey"; 
-
 typedef enum
 {
-  LOOK_FOR_C,
-  BUILD_STRING
+  LOOK_FOR_COMMAND,
+  BUILD_CRGB,
+  PROCESS_STRING
 } parse_state_type;
 
-parse_state_type parse_state = LOOK_FOR_C;
+parse_state_type parse_state = LOOK_FOR_COMMAND;
 
 #define BUFF_SIZE 12
 char myBuffer[BUFF_SIZE];
@@ -54,20 +48,8 @@ void setup( )
 { 
   Serial.begin(9600); 
 
-#if 0
-  leds = CRGB(convertCRGBString(input_5)); 
-  Serial.println(); 
-  Serial.println("CRGB color value");  
-  Serial.print("R = "); 
-  Serial.print(leds[1].red); 
-  Serial.print(" G = "); 
-  Serial.print(leds[1].blue);   
-  Serial.print(" B = "); 
-  Serial.print(leds[1].green);   
-#endif
-
   buffer_index = 0;
-  parse_state = LOOK_FOR_C;
+  parse_state = LOOK_FOR_COMMAND;
 } 
 
 void loop ( ) 
@@ -79,7 +61,22 @@ void loop ( )
    {
      c = Serial.read();
 
-     if (c == 'C')
+     if (parse_state == PROCESS_STRING)
+     {
+       // enters and nulls terminate the string...we'll go back to looking for a command.
+       if ( (c == '\n') || (c == NULL) )
+       {
+         Serial.println();
+         parse_state = LOOK_FOR_COMMAND;
+       }
+       else
+       {
+         // just print the character.
+         Serial.print(c);
+       }
+     }  // end building string
+     
+     else if (c == 'C')
      {
        // This is (potentially) the start of a CRGB string.  Store that 'C' at the 
        // beginning of our buffer.
@@ -87,14 +84,21 @@ void loop ( )
 
        // get ready to collect the other characters.
        buffer_index = 1;
-       parse_state = BUILD_STRING;
+       parse_state = BUILD_CRGB;
 
        Serial.println("** Found a C.  Starting to build");
        
      }
-     else if (parse_state == BUILD_STRING)
+     else if (c == 'S')
      {
-       Serial.print("** Building string, index ");
+       Serial.println("BEGIN STRING: ");
+       
+       // This is the start of a string.
+       parse_state = PROCESS_STRING;
+     }
+     else if (parse_state == BUILD_CRGB)
+     {
+       Serial.print("** Building CRGB, index ");
        Serial.print(buffer_index);
        Serial.print(" , char=");
        Serial.println(c);
@@ -108,8 +112,8 @@ void loop ( )
        {
          Serial.println("FOUND VALID CRGB!!!");
 
-         //go back to looking for a C...
-         parse_state = LOOK_FOR_C;
+         //go back to looking for a Command...
+         parse_state = LOOK_FOR_COMMAND;
          buffer_index = 0;
        }
        else
@@ -119,15 +123,16 @@ void loop ( )
          if (buffer_index >= BUFF_SIZE)
          {
            // We've seen too many characters.  This can't be a CRGB.
-           parse_state = LOOK_FOR_C;
+           parse_state = LOOK_FOR_COMMAND;
            buffer_index = 0;
 
            Serial.println("** Too many chars.  back to looking for C");
          }
          
        }
-     }
-   }
+     }  // end build CRGB 
+     
+   }  // end serial available
 } 
 
 CRGB convertCRGBString(char *input ) 
